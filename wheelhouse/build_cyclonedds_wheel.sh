@@ -15,12 +15,6 @@
 
 set -euo pipefail
 
-# Re-exec under the docker group if this session predates the docker install
-# (usermod -aG docker takes effect on next login; sg avoids that requirement).
-if ! id -Gn | grep -qw docker; then
-    exec sg docker -c "bash '$0' $*"
-fi
-
 # Pinned cibuildwheel version and manylinux image digest for bit-for-bit
 # reproducible builds. Update both together when intentionally upgrading.
 CIBUILDWHEEL_VERSION="3.4.1"
