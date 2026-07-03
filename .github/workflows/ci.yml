@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "releases/tri/0.10.5"
+  pull_request:
+    branches:
+      - "releases/tri/0.10.5"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-tag: py311
+            python-version: "3.11"
+          - python-tag: py312
+            python-version: "3.12"
+
+    name: Test (Python ${{ matrix.python-version }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Build a manylinux wheel using cibuildwheel inside Docker. This handles
+      # the full from-source build of the cyclonedds C library so the runner
+      # does not need it installed system-wide. The resulting wheel bundles
+      # libddsc and can be installed like any normal Python package.
+      - name: Build wheel
+        if: steps.cache-wheel.outputs.cache-hit != 'true'
+        run: bash wheelhouse/build_cyclonedds_wheel.sh ${{ matrix.python-tag }} wheelhouse/
+
+      - name: Set up venv and install dependencies
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet --upgrade pip
+          .venv/bin/pip install --quiet wheelhouse/cyclonedds-*.whl
+          .venv/bin/pip install --quiet -r requirements-dev.txt
+
+      - name: Run tests
+        run: .venv/bin/python local-ci.py --no-linter

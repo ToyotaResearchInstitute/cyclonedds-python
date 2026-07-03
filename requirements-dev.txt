@@ -1,0 +1,11 @@
+# Test dependencies for CI and local development.
+#
+# These are installed into the venv alongside the pre-built cyclonedds wheel
+# (see wheelhouse/build_cyclonedds_wheel.sh and .github/workflows/ci.yml).
+# They are kept here as a standalone file so that CI can install them without
+# triggering a source build of the package (which requires the cyclonedds C
+# library). The same packages are listed under extras_require["dev"] in
+# setup.py, but that path is only usable when building from source.
+pytest>=6.2
+pytest-cov
+pytest-mock
