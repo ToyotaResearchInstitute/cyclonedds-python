@@ -10,6 +10,7 @@
  * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 """
 
+import array as _array
 import sys
 import struct
 
@@ -142,6 +143,40 @@ class Buffer:
         v = struct.unpack_from(self._endian + pack, buffer=self._bytes, offset=self._pos)
         self._pos += size
         return v
+
+    def write_sequence(self, code: str, values) -> 'Buffer':
+        """Serialize a homogeneous sequence of primitives in one shot.
+
+        Using array.array instead of struct.pack with a length-prefixed format
+        string (e.g. "100f") avoids building that string on every call and lets
+        the C array machinery do the copy in bulk.  byteswap() is applied when
+        the buffer's wire endianness differs from the host's native order.
+        'B' (uint8) is special-cased because array.array('B').tobytes() and
+        bytes() are equivalent but bytes() is marginally faster for that type.
+        """
+        if code == 'B':
+            return self.write_bytes(bytes(values))
+        a = _array.array(code, values)
+        if (self.endianness == Endianness.Little) != (sys.byteorder == 'little'):
+            a.byteswap()
+        return self.write_bytes(a.tobytes())
+
+    def read_sequence(self, code: str, length: int) -> list:
+        """Deserialize a homogeneous sequence of primitives in one shot.
+
+        Mirrors write_sequence: frombytes() fills the array directly from the
+        buffer slice without per-element struct.unpack calls, then byteswap()
+        fixes up the byte order when wire and host endianness differ.
+        """
+        if code == 'B':
+            return list(self.read_bytes(length))
+        a = _array.array(code)
+        nbytes = a.itemsize * length
+        a.frombytes(self._bytes[self._pos:self._pos + nbytes])
+        self._pos += nbytes
+        if (self.endianness == Endianness.Little) != (sys.byteorder == 'little'):
+            a.byteswap()
+        return a.tolist()
 
     def asbytes(self) -> bytes:
         return bytes(self._bytes[0:self._pos])
