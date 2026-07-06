@@ -1,3 +1,5 @@
+import array
+import struct
 import pytest
 
 from dataclasses import dataclass
@@ -212,5 +214,115 @@ def test_all_machine_serializers():
     assert b.asbytes() == b"\x04\x00\x00\x00\x01\x00\x34\x12\x02\x00\x00\x00\x00\x77"
 
 
+# All array.array-compatible primitive typecodes used by the IDL machinery.
+_SEQUENCE_CASES = [
+    ('b', [0, -1, 127, -128]),
+    ('B', [0, 1, 127, 255]),
+    ('h', [0, -1, 32767, -32768]),
+    ('H', [0, 1, 32767, 65535]),
+    ('i', [0, -1, 2**31 - 1, -(2**31)]),
+    ('I', [0, 1, 2**31 - 1, 2**32 - 1]),
+    ('q', [0, -1, 2**63 - 1, -(2**63)]),
+    ('Q', [0, 1, 2**63 - 1, 2**64 - 1]),
+    ('f', [0.0, 1.5, -1.5, 3.14]),
+    ('d', [0.0, 1.5, -1.5, 3.14159265358979]),
+]
 
 
+@pytest.mark.parametrize("code,values", _SEQUENCE_CASES)
+def test_write_read_sequence_roundtrip_native(code, values):
+    """write_sequence followed by read_sequence returns the original values."""
+    b = Buffer()
+    b.write_sequence(code, values)
+    b.seek(0)
+    result = b.read_sequence(code, len(values))
+    if code in ('f',):
+        assert result == pytest.approx(values, rel=1e-6)
+    else:
+        assert result == values
+
+
+@pytest.mark.parametrize("code,values", _SEQUENCE_CASES)
+def test_write_read_sequence_roundtrip_non_native(code, values):
+    """Round-trip is correct when buffer endianness is opposite to the host."""
+    non_native = Endianness.Big if Endianness.native() == Endianness.Little else Endianness.Little
+    b = Buffer()
+    b.set_endianness(non_native)
+    b.write_sequence(code, values)
+    b.seek(0)
+    result = b.read_sequence(code, len(values))
+    if code in ('f',):
+        assert result == pytest.approx(values, rel=1e-6)
+    else:
+        assert result == values
+
+
+@pytest.mark.parametrize("code,values", _SEQUENCE_CASES)
+def test_write_sequence_matches_struct_little_endian(code, values):
+    """write_sequence produces the same bytes as struct.pack with '<' prefix."""
+    b = Buffer()
+    b.set_endianness(Endianness.Little)
+    b.write_sequence(code, values)
+    expected = struct.pack(f"<{len(values)}{code}", *values)
+    assert b.asbytes() == expected
+
+
+@pytest.mark.parametrize("code,values", _SEQUENCE_CASES)
+def test_write_sequence_matches_struct_big_endian(code, values):
+    """write_sequence produces the same bytes as struct.pack with '>' prefix."""
+    b = Buffer()
+    b.set_endianness(Endianness.Big)
+    b.write_sequence(code, values)
+    expected = struct.pack(f">{len(values)}{code}", *values)
+    assert b.asbytes() == expected
+
+
+def test_write_sequence_uint8_special_case():
+    """'B' (uint8) fast path produces identical bytes to the generic array path."""
+    values = list(range(256))
+    b_special = Buffer()
+    b_special.write_sequence('B', values)
+
+    b_generic = Buffer()
+    a = array.array('B', values)
+    b_generic.write_bytes(a.tobytes())
+
+    assert b_special.asbytes() == b_generic.asbytes()
+
+
+@pytest.mark.parametrize("idl_type,code,values", [
+    (tp.uint16, 'H', [0x0102, 0x0304, 0x0506]),
+    (tp.int32,  'i', [1, -1, 2**16]),
+    (tp.float64,'d', [1.0, -1.0, 0.5]),
+])
+def test_plain_cdr_v2_array_roundtrip(idl_type, code, values):
+    """PlainCdrV2ArrayOfPrimitiveMachine serializes and deserializes correctly."""
+    m = mc.PlainCdrV2ArrayOfPrimitiveMachine(idl_type, len(values))
+    b = Buffer()
+    b.set_endianness(Endianness.Little)
+    m.serialize(b, values)
+    b.seek(0)
+    result = m.deserialize(b)
+    if code == 'd':
+        assert result == pytest.approx(values)
+    else:
+        assert result == values
+
+
+@pytest.mark.parametrize("idl_type,code,values", [
+    (tp.uint16, 'H', [0x0102, 0x0304, 0x0506]),
+    (tp.int32,  'i', [1, -1, 2**16]),
+    (tp.float64,'d', [1.0, -1.0, 0.5]),
+])
+def test_plain_cdr_v2_sequence_roundtrip(idl_type, code, values):
+    """PlainCdrV2SequenceOfPrimitiveMachine serializes and deserializes correctly."""
+    m = mc.PlainCdrV2SequenceOfPrimitiveMachine(idl_type)
+    b = Buffer()
+    b.set_endianness(Endianness.Little)
+    m.serialize(b, values)
+    b.seek(0)
+    result = m.deserialize(b)
+    if code == 'd':
+        assert result == pytest.approx(values)
+    else:
+        assert result == values

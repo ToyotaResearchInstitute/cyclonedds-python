@@ -663,21 +663,21 @@ class OptionalMachine(Machine):
 
 class PlainCdrV2ArrayOfPrimitiveMachine(Machine):
     def __init__(self, type, length):
-        code, self.alignment, size, default = types._type_code_align_size_default_mapping[type]
+        self.elem_code, self.alignment, size, default = types._type_code_align_size_default_mapping[type]
         self.length = length
         self.size = size * length
-        self.code = str(length) + code
+        self.code = str(length) + self.elem_code
         self.default = [default] * length
         self.subtype = type
 
     def serialize(self, buffer, value, for_key=False):
         assert len(value) == self.length
         buffer.align(self.alignment)
-        buffer.write_multi(self.code, self.size, *value)
+        buffer.write_sequence(self.elem_code, value)
 
     def deserialize(self, buffer):
         buffer.align(self.alignment)
-        return list(buffer.read_multi(self.code, self.size))
+        return buffer.read_sequence(self.elem_code, self.length)
 
     def key_scan(self) -> KeyScanner:
         return KeyScanner.simple(self.alignment, self.size)
@@ -703,14 +703,14 @@ class PlainCdrV2SequenceOfPrimitiveMachine(Machine):
         buffer.write('I', 4, len(value))
         if value:
             buffer.align(self.alignment)
-            buffer.write_multi(f"{len(value)}{self.code}", self.size * len(value), *value)
+            buffer.write_sequence(self.code, value)
 
     def deserialize(self, buffer):
         buffer.align(4)
         length = buffer.read('I', 4)
         if length:
             buffer.align(self.alignment)
-            return list(buffer.read_multi(f"{length}{self.code}", self.size * length))
+            return buffer.read_sequence(self.code, length)
         else:
             return []
 
