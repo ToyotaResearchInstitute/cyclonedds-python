@@ -15,10 +15,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python-tag: py311
-            python-version: "3.11"
-          - python-tag: py312
-            python-version: "3.12"
+          - python-version: "3.11"
+            cibw-build: cp311-manylinux_x86_64
+          - python-version: "3.12"
+            cibw-build: cp312-manylinux_x86_64
 
     name: Test (Python ${{ matrix.python-version }})
 
@@ -33,16 +33,18 @@ jobs:
       # Build a manylinux wheel using cibuildwheel inside Docker. This handles
       # the full from-source build of the cyclonedds C library so the runner
       # does not need it installed system-wide. The resulting wheel bundles
-      # libddsc and can be installed like any normal Python package.
+      # libddsc and can be installed like any normal Python package. The build
+      # configuration lives in the [tool.cibuildwheel] section of pyproject.toml.
       - name: Build wheel
-        if: steps.cache-wheel.outputs.cache-hit != 'true'
-        run: bash wheelhouse/build_cyclonedds_wheel.sh ${{ matrix.python-tag }} wheelhouse/
+        run: |
+          python3 -m pip install --upgrade cibuildwheel
+          cibuildwheel --output-dir dist --only ${{ matrix.cibw-build }}
 
       - name: Set up venv and install dependencies
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet --upgrade pip
-          .venv/bin/pip install --quiet wheelhouse/cyclonedds-*.whl
+          .venv/bin/pip install --quiet dist/*.whl
           .venv/bin/pip install --quiet -r requirements-dev.txt
 
       - name: Run tests
